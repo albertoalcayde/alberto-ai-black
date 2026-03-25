@@ -63,14 +63,14 @@ st.markdown("""
         max-width: 800px !important; 
     }
 
-    /* Mensajes sin fondo de caja, limpios */
+    /* Mensajes limpios */
     .stChatMessage {
         background-color: transparent !important;
         border: none !important;
         padding: 1rem 0rem !important;
     }
 
-    /* --- BARRA DE ESCRITURA ESTILO CHATGPT --- */
+    /* --- BARRA DE ESCRITURA --- */
     [data-testid="stChatInputContainer"] {
         background-color: #FFFFFF !important;
         padding-bottom: 2rem !important;
@@ -82,7 +82,7 @@ st.markdown("""
         padding-left: 1rem !important;
     }
 
-    /* Pantalla de inicio centrada */
+    /* Pantalla inicio */
     .inicio-titulo {
         text-align: center;
         font-size: 2rem;
@@ -92,7 +92,7 @@ st.markdown("""
         color: #0D0D0D;
     }
     
-    /* Ocultar elementos feos */
+    /* Ocultar header */
     header[data-testid="stHeader"] { display: none !important; }
     [data-testid="stFileUploader"] {
         border: 1px dashed #CCCCCC !important;
@@ -108,7 +108,7 @@ try:
     HF_API_KEY = st.secrets["HUGGINGFACE_API_KEY"]
     SERPER_KEY = st.secrets.get("SERPER_API_KEY", None)
 except Exception as e:
-    st.error(f"⚠️ Error de conexión.")
+    st.error(f"⚠️ Error de conexión. Revisa tus Secrets en Streamlit.")
     st.stop()
 
 # --- MEMORIA DB ---
@@ -183,6 +183,31 @@ if not st.session_state.autenticado:
     st.markdown("<div class='inicio-titulo'>Alberto AI</div>", unsafe_allow_html=True)
     st.stop()
 
+# --- PREPARACIÓN DEL CHAT (Cerebro primero) ---
+if "chat_activo" not in st.session_state:
+    st.session_state.chat_activo = "Nueva Conversación"
+
+mensajes = db_cargar_mensajes(st.session_state.usuario, st.session_state.chat_activo)
+
+ahora = datetime.utcnow() + timedelta(hours=1)
+if not mensajes:
+    system_prompt = (
+        f"Eres un asistente IA. Usuario: {st.session_state.usuario}. "
+        f"Fecha/Hora: {ahora.strftime('%d/%m/%Y %H:%M')} (España). "
+        "Si piden imágenes, usa SOLO: [IMAGEN] prompt-inglés. "
+        "Si piden buscar, usa SOLO: [BUSCAR] consulta. "
+        "Responde en español, claro y directo."
+    )
+    mensajes = [{"role": "system", "content": system_prompt}]
+
+# --- PREPARAR TEXTO PARA DESCARGAR CHAT ---
+chat_str = f"--- Documento exportado de Alberto AI ---\nChat: {st.session_state.chat_activo}\nFecha: {ahora.strftime('%d/%m/%Y')}\n\n"
+for m in mensajes:
+    if m["role"] != "system":
+        autor = "Tú" if m["role"] == "user" else "Alberto AI"
+        contenido = "[IMAGEN GENERADA]" if m.get("tipo") == "img" else m["content"]
+        chat_str += f"{autor}:\n{contenido}\n\n"
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown(f"**{st.session_state.usuario.capitalize()}**")
@@ -193,16 +218,30 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("Herramientas")
-    with st.expander("📄 PDF"):
+    
+    # BOTÓN DESCARGAR CHAT TEXTO
+    if len(mensajes) > 1:
+        st.download_button(
+            label="📥 Descargar este chat (.txt)",
+            data=chat_str,
+            file_name=f"{st.session_state.chat_activo.replace(' ', '_')}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+
+    with st.expander("📄 Subir PDF"):
         archivo_pdf = st.file_uploader("", type=["pdf"], key=f"pdf_{st.session_state.get('chat_activo', 'def')}")
         if archivo_pdf:
             doc = fitz.open(stream=archivo_pdf.read(), filetype="pdf")
             st.session_state[f"pdf_{st.session_state.get('chat_activo', 'def')}"] = "".join([p.get_text() for p in doc])[:5000]
-            st.success("Cargado")
+            st.success("PDF Cargado")
 
-    with st.expander("🖼️ Galería"):
-        for img in db_cargar_galeria(st.session_state.usuario):
-            st.image(base64.b64decode(img), use_container_width=True)
+    with st.expander("🖼️ Tu Galería"):
+        for idx, img in enumerate(db_cargar_galeria(st.session_state.usuario)):
+            img_bytes = base64.b64decode(img)
+            st.image(img_bytes, use_container_width=True)
+            # BOTÓN DESCARGAR IMAGEN EN GALERÍA
+            st.download_button("⬇️ Descargar", data=img_bytes, file_name=f"Arte_AlbertoAI_{idx}.png", mime="image/png", key=f"dl_gal_{idx}", use_container_width=True)
 
     st.markdown("---")
     st.caption("Tus chats")
@@ -220,51 +259,33 @@ with st.sidebar:
                 st.rerun()
 
 # --- CHAT CENTRAL ---
-if "chat_activo" not in st.session_state:
-    st.session_state.chat_activo = "Nueva Conversación"
-
-mensajes = db_cargar_mensajes(st.session_state.usuario, st.session_state.chat_activo)
-
-ahora = datetime.utcnow() + timedelta(hours=1)
-if not mensajes:
-    system_prompt = (
-        f"Eres un asistente IA. Usuario: {st.session_state.usuario}. "
-        f"Fecha/Hora: {ahora.strftime('%d/%m/%Y %H:%M')} (España). "
-        "Si piden imágenes, usa SOLO: [IMAGEN] prompt-inglés. "
-        "Si piden buscar, usa SOLO: [BUSCAR] consulta. "
-        "Responde en español, claro y directo."
-    )
-    mensajes = [{"role": "system", "content": system_prompt}]
-
-# Mostrar interfaz según si hay mensajes o es nuevo
 bienvenida = st.empty()
 if len(mensajes) <= 1:
     bienvenida.markdown("<div class='inicio-titulo'>¿Qué tienes en mente hoy?</div>", unsafe_allow_html=True)
 else:
-    for m in mensajes:
+    for idx, m in enumerate(mensajes):
         if m["role"] != "system":
-            # Iconos personalizados y limpios en lugar de los rojos por defecto
             icono = "🤖" if m["role"] == "assistant" else "👤"
             with st.chat_message(m["role"], avatar=icono):
-                if m.get("tipo") == "img": st.image(base64.b64decode(m["content"]), use_container_width=True)
-                else: st.markdown(m["content"])
+                if m.get("tipo") == "img": 
+                    img_bytes = base64.b64decode(m["content"])
+                    st.image(img_bytes, use_container_width=True)
+                    # BOTÓN DESCARGAR IMAGEN EN EL CHAT
+                    st.download_button("⬇️ Descargar Imagen", data=img_bytes, file_name=f"Imagen_IA_{idx}.png", mime="image/png", key=f"dl_chat_{idx}")
+                else: 
+                    st.markdown(m["content"])
 
-# INPUT Y LÓGICA DE RESPUESTA
+# --- INPUT Y LÓGICA DE RESPUESTA ---
 if prompt := st.chat_input("Pregunta lo que quieras"):
-    
-    # 1. Borrar el título de bienvenida al instante
     bienvenida.empty()
     
-    # 2. Asignar título si es un chat nuevo
     if st.session_state.chat_activo == "Nueva Conversación":
         st.session_state.chat_activo = generar_titulo(prompt)
     
-    # 3. Mostrar el mensaje del usuario con icono limpio
     mensajes.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"): 
         st.markdown(prompt)
     
-    # 4. Generar la respuesta de la IA
     with st.chat_message("assistant", avatar="🤖"):
         placeholder = st.empty()
         full_res = ""
@@ -294,7 +315,7 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
                 st.image(base64.b64decode(img_b64), use_container_width=True)
                 mensajes.append({"role": "assistant", "content": img_b64, "tipo": "img"})
                 db_guardar_imagen(st.session_state.usuario, img_b64)
-            else: placeholder.error("Error.")
+            else: placeholder.error("Error al generar imagen.")
         
         elif "[BUSCAR]" in full_res:
             placeholder.info("Buscando en Google...")
@@ -312,6 +333,5 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
             placeholder.markdown(full_res)
             mensajes.append({"role": "assistant", "content": full_res})
         
-    # 5. Guardar el chat y recargar TODO solo al final
     db_guardar_chat(st.session_state.usuario, st.session_state.chat_activo, mensajes)
     st.rerun()
