@@ -6,60 +6,47 @@ import base64
 import io
 from PIL import Image
 
-# --- CONFIGURACIÓN DE ÉLITE ---
-st.set_page_config(page_title="Alberto AI - Multi-User", page_icon="👥", layout="wide")
+# --- CONFIGURACIÓN DE INTERFAZ ---
+st.set_page_config(page_title="Alberto AI - Community", page_icon="🤝", layout="wide")
 
-# Estética Premium "Light Mode"
+# Estética White Edition mejorada
 st.markdown("""
     <style>
     .stApp { background-color: #f7f7f8; color: #212121; }
     [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e5e5e5; }
     .stChatMessage { background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; }
-    .stChatInput { border-radius: 10px !important; border: 1px solid #ddd !important; }
     h1 { color: #1a1a1a; font-family: 'Inter', sans-serif; }
-    .login-box { padding: 2rem; border-radius: 15px; background: white; border: 1px solid #ddd; text-align: center; }
+    .welcome-box { padding: 3rem; text-align: center; background: white; border-radius: 20px; border: 1px solid #eee; margin-top: 5rem; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- SISTEMA DE USUARIOS (GESTIÓN DIRECTA) ---
-# Aquí puedes añadir a tus amigos y familiares. 
-# Formato: "usuario": "contraseña"
-USUARIOS_AUTORIZADOS = {
-    "alberto": "pro2024",
-    "familia": "casa2024",
-    "amigo1": "invitado123"
-}
-
-# --- CONTROL DE SESIÓN ---
+# --- SISTEMA DE IDENTIFICACIÓN ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
-def login():
+def pantalla_acceso():
     with st.sidebar:
-        st.title("🔐 Acceso Privado")
-        usuario = st.text_input("Usuario")
-        clave = st.text_input("Contraseña", type="password")
-        if st.button("Entrar"):
-            if usuario in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[usuario] == clave:
+        st.title("🆔 Identificación")
+        nombre = st.text_input("¿Cómo te llamas?", placeholder="Escribe tu nombre...")
+        if st.button("Comenzar Sesión"):
+            if nombre.strip():
                 st.session_state.autenticado = True
-                st.session_state.usuario_actual = usuario
+                st.session_state.usuario_actual = nombre.strip()
                 st.rerun()
             else:
-                st.error("Credenciales incorrectas")
+                st.warning("Por favor, introduce un nombre.")
 
 if not st.session_state.autenticado:
-    st.markdown("<div class='login-box'><h1>Bienvenido a Alberto AI</h1><p>Introduce tus credenciales en la barra lateral para comenzar.</p></div>", unsafe_allow_html=True)
-    login()
+    st.markdown("<div class='welcome-box'><h1>Bienvenido a la IA de Alberto</h1><p>Por favor, identifícate en la barra lateral para empezar a chatear.</p></div>", unsafe_allow_html=True)
+    pantalla_acceso()
     st.stop()
 
-# --- SI ESTÁ AUTENTICADO, CARGAMOS EL RESTO ---
-
-# Lógica de APIs
+# --- CONFIGURACIÓN DE APIS ---
 try:
     cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
     HF_API_KEY = st.secrets["HUGGINGFACE_API_KEY"]
 except:
-    st.error("Error de configuración de llaves API.")
+    st.error("Error en las llaves API de los Secrets.")
     st.stop()
 
 def generar_imagen(prompt):
@@ -70,25 +57,26 @@ def generar_imagen(prompt):
         return base64.b64encode(r.content).decode() if r.status_code == 200 else None
     except: return None
 
-# --- INTERFAZ DEL USUARIO LOGUEADO ---
+# --- INTERFAZ DE USUARIO ACTIVA ---
 with st.sidebar:
-    st.markdown(f"### 👋 Hola, {st.session_state.usuario_actual.capitalize()}")
+    st.markdown(f"### ✨ Sesión de: **{st.session_state.usuario_actual}**")
     st.markdown("---")
-    st.markdown("### 📄 Tus Documentos")
-    archivo_pdf = st.file_uploader("Sube un PDF", type=["pdf"], label_visibility="collapsed")
+    st.markdown("### 📂 Analizar PDF")
+    archivo_pdf = st.file_uploader("", type=["pdf"], label_visibility="collapsed")
     
     if archivo_pdf:
         doc = fitz.open(stream=archivo_pdf.read(), filetype="pdf")
         st.session_state.pdf_content = "".join([p.get_text() for p in doc])
-        st.success(f"Analizado: {archivo_pdf.name}")
+        st.success(f"Archivo '{archivo_pdf.name}' listo.")
 
-    if st.button("Cerrar Sesión"):
+    if st.button("Cambiar de Usuario"):
         st.session_state.autenticado = False
+        st.session_state.mensajes = [] # Limpiamos chat al salir
         st.rerun()
 
-# Memoria del chat (Cada usuario tiene la suya en su sesión de navegador)
+# Memoria del chat individual
 if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [{"role": "system", "content": f"Eres Alberto AI. Te diriges a {st.session_state.usuario_actual}. Eres profesional y respondes en español. Imágenes con [IMAGEN] + prompt inglés."}]
+    st.session_state.mensajes = [{"role": "system", "content": f"Eres Alberto AI. Estás hablando con {st.session_state.usuario_actual}. Eres amable, brillante y respondes en español. Si piden imagen, usa [IMAGEN] + prompt en inglés."}]
 
 # Mostrar historial
 for m in st.session_state.mensajes:
@@ -99,8 +87,8 @@ for m in st.session_state.mensajes:
             else:
                 st.markdown(m["content"])
 
-# Entrada de chat
-if prompt := st.chat_input(f"Dime algo, {st.session_state.usuario_actual.capitalize()}..."):
+# Chat
+if prompt := st.chat_input(f"¿En qué puedo ayudarte, {st.session_state.usuario_actual}?"):
     st.session_state.mensajes.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
@@ -108,14 +96,13 @@ if prompt := st.chat_input(f"Dime algo, {st.session_state.usuario_actual.capital
         placeholder = st.empty()
         full_res = ""
         
-        # Construir contexto incluyendo el PDF si existe
-        messages_to_send = [m for m in st.session_state.mensajes if "tipo" not in m]
+        ctx = [m for m in st.session_state.mensajes if "tipo" not in m]
         if "pdf_content" in st.session_state:
-            messages_to_send.insert(1, {"role": "system", "content": f"Contexto del PDF actual: {st.session_state.pdf_content[:3000]}"})
+            ctx.insert(1, {"role": "system", "content": f"Documento actual: {st.session_state.pdf_content[:3000]}"})
 
         stream = cliente_groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=messages_to_send,
+            messages=ctx,
             stream=True
         )
         
@@ -126,7 +113,7 @@ if prompt := st.chat_input(f"Dime algo, {st.session_state.usuario_actual.capital
                     placeholder.markdown(full_res + "▌")
 
         if full_res.startswith("[IMAGEN]"):
-            placeholder.info("🎨 Alberto AI está creando tu imagen...")
+            placeholder.info("🎨 Generando arte para ti...")
             img_b64 = generar_imagen(full_res.replace("[IMAGEN]", "").strip())
             if img_b64:
                 placeholder.empty()
