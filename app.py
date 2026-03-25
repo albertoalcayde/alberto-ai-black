@@ -25,7 +25,7 @@ try:
     cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
     HF_API_KEY = st.secrets["HUGGINGFACE_API_KEY"]
 except Exception as e:
-    st.error("⚠️ Error en las llaves API. Revisa los Secrets en Streamlit Cloud.")
+    st.error(f"⚠️ Error técnico: {e}")
     st.stop()
 
 # --- FUNCIONES DE MEMORIA (SUPABASE) ---
@@ -176,4 +176,4 @@ if prompt := st.chat_input("Dime algo..."):
             st.rerun()
             
         except Exception as e:
-            st.error("❌ Error de conexión. Revisa tu llave de Groq.")
+            st.error(f"❌ Error de conexión: {e}")
