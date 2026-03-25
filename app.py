@@ -7,17 +7,56 @@ import json
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# --- CONFIGURACIÓN DE INTERFAZ PREMIUM ---
+# --- DISEÑO VISUAL "PREMIUM WHITE" ---
 st.set_page_config(page_title="Alberto AI - PRO Edition", page_icon="⚡", layout="wide")
 
 st.markdown("""
     <style>
-    .stApp { background-color: #f7f7f8; color: #1f1f1f; }
-    [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e5e5e5; }
-    .stChatMessage { background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; margin-bottom: 15px; }
-    .stChatInput { border-radius: 10px !important; border: 1px solid #ddd !important; }
-    h1 { font-weight: 800; color: #1a1a1a; }
-    .stButton>button { border-radius: 8px; font-weight: 500; }
+    /* Fondo principal blanco puro */
+    .stApp { 
+        background-color: #ffffff; 
+        color: #1f1f1f; 
+    }
+    
+    /* Barra lateral en gris ultra claro */
+    [data-testid="stSidebar"] { 
+        background-color: #f8f9fa; 
+        border-right: 1px solid #eeeeee; 
+    }
+    
+    /* Burbujas de chat con estilo limpio */
+    .stChatMessage { 
+        background-color: #ffffff; 
+        border: 1px solid #f0f0f0; 
+        border-radius: 15px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        margin-bottom: 15px; 
+    }
+    
+    /* Input de texto moderno */
+    .stChatInput { 
+        border-radius: 12px !important; 
+        border: 1px solid #e0e0e0 !important; 
+        background-color: #ffffff !important;
+    }
+
+    /* Títulos y fuentes */
+    h1, h2, h3 { 
+        color: #1a1a1a; 
+        font-family: 'Inter', sans-serif;
+        font-weight: 700;
+    }
+
+    /* Botones personalizados */
+    .stButton>button { 
+        border-radius: 10px; 
+        border: 1px solid #eeeeee;
+        transition: all 0.2s;
+    }
+    .stButton>button:hover {
+        border-color: #007aff;
+        color: #007aff;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -56,7 +95,7 @@ def db_cargar_galeria(usuario):
 
 # --- FUNCIONES DE IA Y BÚSQUEDA ---
 def buscar_google(query):
-    if not SERPER_KEY: return "Error: No tienes configurada la llave de Serper."
+    if not SERPER_KEY: return "Error: Sin llave de Serper."
     url = "https://google.serper.dev/search"
     payload = json.dumps({"q": query, "gl": "es", "hl": "es"})
     headers = {'X-API-KEY': SERPER_KEY, 'Content-Type': 'application/json'}
@@ -79,14 +118,14 @@ def generar_titulo(mensaje):
     try:
         res = cliente_groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "Resume en 2 palabras este tema para un título. Solo texto."},
+            messages=[{"role": "system", "content": "Resume en 2 palabras este tema. Solo texto."},
                       {"role": "user", "content": mensaje}],
             max_tokens=10
         )
         return res.choices[0].message.content.strip().replace('"', '')
     except: return "Chat Nuevo"
 
-# --- ACCESO DE USUARIO ---
+# --- ACCESO ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
@@ -99,12 +138,12 @@ if not st.session_state.autenticado:
                 st.session_state.autenticado = True
                 st.session_state.usuario = nombre.lower().strip()
                 st.rerun()
-    st.markdown("<h1 style='text-align:center;'>Alberto AI Cloud</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align:center; margin-top:5rem;'>Alberto AI</h1>", unsafe_allow_html=True)
     st.stop()
 
-# --- BARRA LATERAL ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.subheader(f"👋 Hola, {st.session_state.usuario.capitalize()}")
+    st.subheader(f"👋 {st.session_state.usuario.capitalize()}")
     
     if st.button("➕ Nuevo Chat", use_container_width=True):
         st.session_state.chat_activo = "Nueva Conversación"
@@ -117,10 +156,10 @@ with st.sidebar:
         if archivo_pdf:
             doc = fitz.open(stream=archivo_pdf.read(), filetype="pdf")
             st.session_state[f"pdf_txt_{st.session_state.get('chat_activo', 'default')}"] = "".join([p.get_text() for p in doc])[:5000]
-            st.success("✅ Documento listo")
+            st.success("✅ PDF analizado")
 
     st.markdown("---")
-    st.caption("Tus conversaciones:")
+    st.caption("Historial de chats:")
     titulos = db_cargar_titulos(st.session_state.usuario)
     for t in titulos:
         col_t, col_del = st.columns([0.8, 0.2])
@@ -134,42 +173,43 @@ with st.sidebar:
                 if st.session_state.chat_activo == t: st.session_state.chat_activo = "Nueva Conversación"
                 st.rerun()
     
-    with st.expander("🖼️ Galería"):
+    st.markdown("---")
+    with st.expander("🖼️ Galería de Fotos"):
         for img in db_cargar_galeria(st.session_state.usuario):
             st.image(base64.b64decode(img), use_container_width=True)
 
-# --- CHAT ACTIVO ---
+# --- ÁREA DE CHAT ---
 if "chat_activo" not in st.session_state:
     st.session_state.chat_activo = "Nueva Conversación"
 
 st.title(f"💬 {st.session_state.chat_activo}")
 
-mensajes = db_cargar_messages = db_cargar_mensajes(st.session_state.usuario, st.session_state.chat_activo)
+mensajes = db_cargar_mensajes(st.session_state.usuario, st.session_state.chat_activo)
 
 if not mensajes:
-    # --- AJUSTE DE RELOJ ESPAÑOL ---
-    ahora = datetime.utcnow() + timedelta(hours=1) # UTC+1 para España (invierno)
+    # HORA EN ESPAÑA
+    ahora = datetime.utcnow() + timedelta(hours=1)
     fecha_txt = ahora.strftime("%d/%m/%Y")
     hora_txt = ahora.strftime("%H:%M")
 
     system_prompt = (
         f"Eres 'Alberto AI PRO'. Usuario: {st.session_state.usuario}. "
         f"FECHA Y HORA ACTUAL EN ESPAÑA: {fecha_txt} a las {hora_txt}. "
-        "Si te piden imágenes, responde SOLO: [IMAGEN] prompt-en-inglés. "
-        "Si te piden info actual o noticias, responde SOLO: [BUSCAR] consulta-de-búsqueda. "
-        "Responde siempre en español y sé directo."
+        "Si piden imágenes, responde SOLO: [IMAGEN] prompt-en-inglés. "
+        "Si piden info actual, responde SOLO: [BUSCAR] consulta. "
+        "Responde siempre en español de forma directa y elegante."
     )
     mensajes = [{"role": "system", "content": system_prompt}]
 
-# Mostrar historial
+# Mostrar mensajes
 for m in mensajes:
     if m["role"] != "system":
         with st.chat_message(m["role"]):
             if m.get("tipo") == "img": st.image(base64.b64decode(m["content"]), use_container_width=True)
             else: st.markdown(m["content"])
 
-# Entrada de usuario
-if prompt := st.chat_input("¿Qué tienes en mente?"):
+# Input
+if prompt := st.chat_input("Escribe aquí..."):
     if st.session_state.chat_activo == "Nueva Conversación":
         st.session_state.chat_activo = generar_titulo(prompt)
     
@@ -198,7 +238,7 @@ if prompt := st.chat_input("¿Qué tienes en mente?"):
         
         # PROCESAR ACCIONES
         if "[IMAGEN]" in full_res:
-            placeholder.info("🎨 Generando arte digital...")
+            placeholder.info("🎨 Generando arte...")
             prompt_img = full_res.split("[IMAGEN]")[1].strip()
             img_b64 = generar_imagen(prompt_img)
             if img_b64:
@@ -208,12 +248,12 @@ if prompt := st.chat_input("¿Qué tienes en mente?"):
                 db_guardar_imagen(st.session_state.usuario, img_b64)
         
         elif "[BUSCAR]" in full_res:
-            placeholder.info("🔍 Buscando en Google en tiempo real...")
+            placeholder.info("🔍 Buscando...")
             q = full_res.split("[BUSCAR]")[1].strip()
             data = buscar_google(q)
             res_ia = cliente_groq.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "system", "content": f"Resume esto para el usuario: {data}"}]
+                messages=[{"role": "system", "content": f"Resume esto para el usuario de forma elegante: {data}"}]
             )
             txt = res_ia.choices[0].message.content
             placeholder.markdown(txt)
