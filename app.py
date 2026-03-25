@@ -4,6 +4,8 @@ import fitz
 import requests
 import base64
 import json
+import io
+from gtts import gTTS
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
@@ -183,7 +185,7 @@ if not st.session_state.autenticado:
     st.markdown("<div class='inicio-titulo'>Alberto AI</div>", unsafe_allow_html=True)
     st.stop()
 
-# --- PREPARACIÓN DEL CHAT (Cerebro primero) ---
+# --- PREPARACIÓN DEL CHAT ---
 if "chat_activo" not in st.session_state:
     st.session_state.chat_activo = "Nueva Conversación"
 
@@ -200,7 +202,6 @@ if not mensajes:
     )
     mensajes = [{"role": "system", "content": system_prompt}]
 
-# --- PREPARAR TEXTO PARA DESCARGAR CHAT ---
 chat_str = f"--- Documento exportado de Alberto AI ---\nChat: {st.session_state.chat_activo}\nFecha: {ahora.strftime('%d/%m/%Y')}\n\n"
 for m in mensajes:
     if m["role"] != "system":
@@ -217,9 +218,13 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
+    st.caption("Ajustes de Voz")
+    # INTERRUPTOR DE VOZ
+    usar_voz = st.toggle("🗣️ Hablar en voz alta", value=False)
+    
+    st.markdown("---")
     st.caption("Herramientas")
     
-    # BOTÓN DESCARGAR CHAT TEXTO
     if len(mensajes) > 1:
         st.download_button(
             label="📥 Descargar este chat (.txt)",
@@ -240,8 +245,7 @@ with st.sidebar:
         for idx, img in enumerate(db_cargar_galeria(st.session_state.usuario)):
             img_bytes = base64.b64decode(img)
             st.image(img_bytes, use_container_width=True)
-            # BOTÓN DESCARGAR IMAGEN EN GALERÍA
-            st.download_button("⬇️ Descargar", data=img_bytes, file_name=f"Arte_AlbertoAI_{idx}.png", mime="image/png", key=f"dl_gal_{idx}", use_container_width=True)
+            st.download_button("⬇️ Descargar", data=img_bytes, file_name=f"Arte_{idx}.png", mime="image/png", key=f"dl_gal_{idx}", use_container_width=True)
 
     st.markdown("---")
     st.caption("Tus chats")
@@ -270,8 +274,7 @@ else:
                 if m.get("tipo") == "img": 
                     img_bytes = base64.b64decode(m["content"])
                     st.image(img_bytes, use_container_width=True)
-                    # BOTÓN DESCARGAR IMAGEN EN EL CHAT
-                    st.download_button("⬇️ Descargar Imagen", data=img_bytes, file_name=f"Imagen_IA_{idx}.png", mime="image/png", key=f"dl_chat_{idx}")
+                    st.download_button("⬇️ Descargar Imagen", data=img_bytes, file_name=f"Imagen_{idx}.png", mime="image/png", key=f"dl_chat_{idx}")
                 else: 
                     st.markdown(m["content"])
 
@@ -289,6 +292,7 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
     with st.chat_message("assistant", avatar="🤖"):
         placeholder = st.empty()
         full_res = ""
+        txt_final = ""
         
         ctx = [m for m in mensajes if m.get("tipo") != "img"]
         pdf_ctx = st.session_state.get(f"pdf_{st.session_state.chat_activo}", "")
@@ -306,6 +310,7 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
                 if not any(x in full_res for x in ["[IMAGEN]", "[BUSCAR]"]):
                     placeholder.markdown(full_res + "▌")
         
+        # Procesar qué es lo que se va a mostrar y a leer
         if "[IMAGEN]" in full_res:
             placeholder.info("Generando imagen...")
             prompt_img = full_res.split("[IMAGEN]")[1].strip()
@@ -315,7 +320,10 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
                 st.image(base64.b64decode(img_b64), use_container_width=True)
                 mensajes.append({"role": "assistant", "content": img_b64, "tipo": "img"})
                 db_guardar_imagen(st.session_state.usuario, img_b64)
-            else: placeholder.error("Error al generar imagen.")
+                txt_final = "Aquí tienes la imagen que me has pedido."
+            else: 
+                placeholder.error("Error al generar imagen.")
+                txt_final = "Hubo un error al crear la imagen."
         
         elif "[BUSCAR]" in full_res:
             placeholder.info("Buscando en Google...")
@@ -325,13 +333,30 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "system", "content": f"Resume: {data}"}]
             )
-            txt = res_ia.choices[0].message.content
-            placeholder.markdown(txt)
-            mensajes.append({"role": "assistant", "content": txt})
+            txt_final = res_ia.choices[0].message.content
+            placeholder.markdown(txt_final)
+            mensajes.append({"role": "assistant", "content": txt_final})
         
         else:
-            placeholder.markdown(full_res)
-            mensajes.append({"role": "assistant", "content": full_res})
+            txt_final = full_res
+            placeholder.markdown(txt_final)
+            mensajes.append({"role": "assistant", "content": txt_final})
+            
+        # --- MOTOR DE VOZ (Se ejecuta si el botón está encendido) ---
+        if usar_voz and txt_final:
+            try:
+                # Limpiamos el texto para que la voz no lea asteriscos ni comillas raras
+                texto_limpio = txt_final.replace('*', '').replace('#', '').replace('"', '')
+                tts = gTTS(text=texto_limpio, lang='es', tld='es') # tld='es' fuerza el acento de España
+                fp = io.BytesIO()
+                tts.write_to_fp(fp)
+                fp.seek(0)
+                b64_audio = base64.b64encode(fp.read()).decode()
+                # Reproductor invisible que arranca solo
+                audio_html = f'<audio autoplay="true" src="data:audio/mp3;base64,{b64_audio}"></audio>'
+                st.markdown(audio_html, unsafe_allow_html=True)
+            except Exception as e:
+                pass # Si falla el audio, simplemente no suena pero no rompe la app
         
     db_guardar_chat(st.session_state.usuario, st.session_state.chat_activo, mensajes)
-    st.rerun()
+    # Ya no forzamos el st.rerun() al final para dejar que el audio se reproduzca sin cortes
