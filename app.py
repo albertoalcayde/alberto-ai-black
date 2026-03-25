@@ -7,55 +7,66 @@ import json
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# --- DISEÑO VISUAL "PREMIUM WHITE" ---
+# --- DISEÑO VISUAL "PREMIUM iOS" ---
 st.set_page_config(page_title="Alberto AI - PRO Edition", page_icon="⚡", layout="wide")
 
 st.markdown("""
     <style>
-    /* Fondo principal blanco puro */
+    /* 1. Fondo de la app: Un gris muy claro y elegante */
     .stApp { 
-        background-color: #ffffff; 
-        color: #1f1f1f; 
+        background-color: #F3F4F6; 
+        color: #111827; 
     }
     
-    /* Barra lateral en gris ultra claro */
+    /* 2. Barra lateral: Blanca pura para crear contraste */
     [data-testid="stSidebar"] { 
-        background-color: #f8f9fa; 
-        border-right: 1px solid #eeeeee; 
+        background-color: #FFFFFF; 
+        border-right: 1px solid #E5E7EB; 
     }
     
-    /* Burbujas de chat con estilo limpio */
+    /* 3. Botones Primarios (Chat Activo) en AZUL iOS */
+    button[kind="primary"] {
+        background-color: #007AFF !important;
+        border-color: #007AFF !important;
+        color: white !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease-in-out;
+    }
+    button[kind="primary"]:hover {
+        background-color: #005bb5 !important;
+    }
+    
+    /* Botones Secundarios (Otros chats y herramientas) */
+    button[kind="secondary"] {
+        border-radius: 12px !important;
+        background-color: #F9FAFB !important;
+        border: 1px solid #E5E7EB !important;
+        color: #374151 !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease-in-out;
+    }
+    button[kind="secondary"]:hover {
+        border-color: #007AFF !important;
+        color: #007AFF !important;
+    }
+    
+    /* 4. Burbujas de chat estilo tarjeta con sombra 3D suave */
     .stChatMessage { 
-        background-color: #ffffff; 
-        border: 1px solid #f0f0f0; 
-        border-radius: 15px; 
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        margin-bottom: 15px; 
+        background-color: #FFFFFF; 
+        border: none !important; 
+        border-radius: 18px; 
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05);
+        padding: 1.2rem;
+        margin-bottom: 20px; 
     }
     
-    /* Input de texto moderno */
+    /* 5. Barra para escribir con bordes muy redondeados (tipo píldora) */
     .stChatInput { 
-        border-radius: 12px !important; 
-        border: 1px solid #e0e0e0 !important; 
-        background-color: #ffffff !important;
-    }
-
-    /* Títulos y fuentes */
-    h1, h2, h3 { 
-        color: #1a1a1a; 
-        font-family: 'Inter', sans-serif;
-        font-weight: 700;
-    }
-
-    /* Botones personalizados */
-    .stButton>button { 
-        border-radius: 10px; 
-        border: 1px solid #eeeeee;
-        transition: all 0.2s;
-    }
-    .stButton>button:hover {
-        border-color: #007aff;
-        color: #007aff;
+        border-radius: 25px !important; 
+        border: 1px solid #E5E7EB !important; 
+        box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.06) !important;
+        background-color: #FFFFFF !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -95,14 +106,17 @@ def db_cargar_galeria(usuario):
 
 # --- FUNCIONES DE IA Y BÚSQUEDA ---
 def buscar_google(query):
-    if not SERPER_KEY: return "Error: Sin llave de Serper."
+    if not SERPER_KEY: return "Error: Sin llave de Serper configurada."
     url = "https://google.serper.dev/search"
     payload = json.dumps({"q": query, "gl": "es", "hl": "es"})
     headers = {'X-API-KEY': SERPER_KEY, 'Content-Type': 'application/json'}
-    response = requests.post(url, headers=headers, data=payload)
-    results = response.json()
-    snippets = [f"- {item['title']}: {item['snippet']}" for item in results.get('organic', [])[:3]]
-    return "\n".join(snippets)
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+        results = response.json()
+        snippets = [f"- {item['title']}: {item['snippet']}" for item in results.get('organic', [])[:3]]
+        return "\n".join(snippets) if snippets else "No se encontraron resultados relevantes."
+    except Exception as e:
+        return f"Error en la búsqueda: {e}"
 
 def generar_imagen(prompt):
     URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
@@ -118,7 +132,7 @@ def generar_titulo(mensaje):
     try:
         res = cliente_groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "Resume en 2 palabras este tema. Solo texto."},
+            messages=[{"role": "system", "content": "Resume en 2 palabras este tema. Solo texto sin comillas."},
                       {"role": "user", "content": mensaje}],
             max_tokens=10
         )
@@ -133,7 +147,7 @@ if not st.session_state.autenticado:
     with st.sidebar:
         st.title("🆔 Acceso")
         nombre = st.text_input("Dime tu nombre...")
-        if st.button("Entrar"):
+        if st.button("Entrar", type="primary"):
             if nombre:
                 st.session_state.autenticado = True
                 st.session_state.usuario = nombre.lower().strip()
@@ -141,11 +155,11 @@ if not st.session_state.autenticado:
     st.markdown("<h1 style='text-align:center; margin-top:5rem;'>Alberto AI</h1>", unsafe_allow_html=True)
     st.stop()
 
-# --- SIDEBAR ---
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.subheader(f"👋 {st.session_state.usuario.capitalize()}")
     
-    if st.button("➕ Nuevo Chat", use_container_width=True):
+    if st.button("➕ Nuevo Chat", use_container_width=True, type="secondary"):
         st.session_state.chat_activo = "Nueva Conversación"
         st.rerun()
     
@@ -196,7 +210,7 @@ if not mensajes:
         f"Eres 'Alberto AI PRO'. Usuario: {st.session_state.usuario}. "
         f"FECHA Y HORA ACTUAL EN ESPAÑA: {fecha_txt} a las {hora_txt}. "
         "Si piden imágenes, responde SOLO: [IMAGEN] prompt-en-inglés. "
-        "Si piden info actual, responde SOLO: [BUSCAR] consulta. "
+        "Si piden info actual, noticias o el tiempo, responde SOLO: [BUSCAR] consulta. "
         "Responde siempre en español de forma directa y elegante."
     )
     mensajes = [{"role": "system", "content": system_prompt}]
@@ -246,14 +260,16 @@ if prompt := st.chat_input("Escribe aquí..."):
                 st.image(base64.b64decode(img_b64), use_container_width=True)
                 mensajes.append({"role": "assistant", "content": img_b64, "tipo": "img"})
                 db_guardar_imagen(st.session_state.usuario, img_b64)
+            else:
+                placeholder.error("Error al generar la imagen.")
         
         elif "[BUSCAR]" in full_res:
-            placeholder.info("🔍 Buscando...")
+            placeholder.info("🔍 Buscando en internet...")
             q = full_res.split("[BUSCAR]")[1].strip()
             data = buscar_google(q)
             res_ia = cliente_groq.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "system", "content": f"Resume esto para el usuario de forma elegante: {data}"}]
+                messages=[{"role": "system", "content": f"Resume esto para el usuario de forma natural: {data}"}]
             )
             txt = res_ia.choices[0].message.content
             placeholder.markdown(txt)
@@ -263,5 +279,4 @@ if prompt := st.chat_input("Escribe aquí..."):
             placeholder.markdown(full_res)
             mensajes.append({"role": "assistant", "content": full_res})
         
-        db_guardar_chat(st.session_state.usuario, st.session_state.chat_activo, mensajes)
-        st.rerun()
+        db_guardar_chat
