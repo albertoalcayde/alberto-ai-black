@@ -21,7 +21,7 @@ st.markdown("""
         color: #0D0D0D !important;
     }
 
-    /* --- 1. BARRA LATERAL GRIS MUY CLARO --- */
+    /* --- BARRA LATERAL GRIS MUY CLARO --- */
     [data-testid="stSidebar"] {
         background-color: #F9F9F9 !important;
         border-right: 1px solid #ECECEC !important;
@@ -31,7 +31,7 @@ st.markdown("""
         color: #0D0D0D !important;
     }
 
-    /* Botones de historial (secundarios) */
+    /* Botones de historial */
     [data-testid="stSidebar"] button[kind="secondary"] {
         background-color: transparent !important;
         border: none !important;
@@ -46,7 +46,7 @@ st.markdown("""
         background-color: #ECECEC !important;
     }
     
-    /* Botón Chat Activo (primario) */
+    /* Botón Chat Activo */
     [data-testid="stSidebar"] button[kind="primary"] {
         background-color: #ECECEC !important; 
         border: none !important;
@@ -57,7 +57,7 @@ st.markdown("""
         padding: 8px 12px !important;
     }
 
-    /* --- 2. ÁREA CENTRAL BLANCA --- */
+    /* --- ÁREA CENTRAL BLANCA --- */
     .main .block-container {
         padding-top: 3rem !important;
         max-width: 800px !important; 
@@ -69,12 +69,8 @@ st.markdown("""
         border: none !important;
         padding: 1rem 0rem !important;
     }
-    
-    [data-testid="stChatMessageAvatar"] {
-        background-color: transparent !important;
-    }
 
-    /* --- 3. BARRA DE ESCRITURA ESTILO CHATGPT --- */
+    /* --- BARRA DE ESCRITURA ESTILO CHATGPT --- */
     [data-testid="stChatInputContainer"] {
         background-color: #FFFFFF !important;
         padding-bottom: 2rem !important;
@@ -241,31 +237,35 @@ if not mensajes:
     mensajes = [{"role": "system", "content": system_prompt}]
 
 # Mostrar interfaz según si hay mensajes o es nuevo
+bienvenida = st.empty()
 if len(mensajes) <= 1:
-    st.markdown("<div class='inicio-titulo'>¿Qué tienes en mente hoy?</div>", unsafe_allow_html=True)
+    bienvenida.markdown("<div class='inicio-titulo'>¿Qué tienes en mente hoy?</div>", unsafe_allow_html=True)
 else:
     for m in mensajes:
         if m["role"] != "system":
-            # Avatares fijos y seguros
-            with st.chat_message(m["role"]):
+            # Iconos personalizados y limpios en lugar de los rojos por defecto
+            icono = "🤖" if m["role"] == "assistant" else "👤"
+            with st.chat_message(m["role"], avatar=icono):
                 if m.get("tipo") == "img": st.image(base64.b64decode(m["content"]), use_container_width=True)
                 else: st.markdown(m["content"])
 
-# INPUT
+# INPUT Y LÓGICA DE RESPUESTA
 if prompt := st.chat_input("Pregunta lo que quieras"):
+    
+    # 1. Borrar el título de bienvenida al instante
+    bienvenida.empty()
+    
+    # 2. Asignar título si es un chat nuevo
     if st.session_state.chat_activo == "Nueva Conversación":
         st.session_state.chat_activo = generar_titulo(prompt)
     
+    # 3. Mostrar el mensaje del usuario con icono limpio
     mensajes.append({"role": "user", "content": prompt})
+    with st.chat_message("user", avatar="👤"): 
+        st.markdown(prompt)
     
-    # Rerun inicial para quitar el título de bienvenida
-    if len(mensajes) == 2:
-        db_guardar_chat(st.session_state.usuario, st.session_state.chat_activo, mensajes)
-        st.rerun()
-        
-    with st.chat_message("user"): st.markdown(prompt)
-    
-    with st.chat_message("assistant"):
+    # 4. Generar la respuesta de la IA
+    with st.chat_message("assistant", avatar="🤖"):
         placeholder = st.empty()
         full_res = ""
         
@@ -297,7 +297,7 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
             else: placeholder.error("Error.")
         
         elif "[BUSCAR]" in full_res:
-            placeholder.info("Buscando...")
+            placeholder.info("Buscando en Google...")
             q = full_res.split("[BUSCAR]")[1].strip()
             data = buscar_google(q)
             res_ia = cliente_groq.chat.completions.create(
@@ -312,4 +312,6 @@ if prompt := st.chat_input("Pregunta lo que quieras"):
             placeholder.markdown(full_res)
             mensajes.append({"role": "assistant", "content": full_res})
         
-        db_guardar_chat(st.session_state.usuario, st.session_state.chat_activo, mensajes)
+    # 5. Guardar el chat y recargar TODO solo al final
+    db_guardar_chat(st.session_state.usuario, st.session_state.chat_activo, mensajes)
+    st.rerun()
