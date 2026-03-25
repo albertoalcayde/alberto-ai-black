@@ -6,21 +6,32 @@ import base64
 import io
 from PIL import Image
 
-# --- CONFIGURACIÓN DE ÉLITE ---
-st.set_page_config(page_title="Alberto AI - Ultra Black", page_icon="🌑", layout="wide")
+# --- CONFIGURACIÓN DE ÉLITE (MODO CLARO) ---
+st.set_page_config(page_title="Alberto AI - White Edition", page_icon="⚪", layout="wide")
 
-# CSS para una interfaz tipo "Premium Dark Mode"
+# CSS para una interfaz tipo "SaaS Moderno / Light Mode"
 st.markdown("""
     <style>
-    .stApp { background-color: #050505; color: #e0e0e0; }
-    [data-testid="stSidebar"] { background-color: #0a0a0a; border-right: 1px solid #1e1e1e; padding-top: 2rem; }
-    .stChatMessage { background-color: #111111; border: 1px solid #222; border-radius: 12px; padding: 15px; margin-bottom: 10px; }
-    .stChatInputContainer { padding-bottom: 20px; }
-    h1 { color: #ffffff; font-family: 'Inter', sans-serif; font-weight: 800; }
-    .stButton>button { background-color: #ffffff; color: #000; border-radius: 8px; border: none; font-weight: bold; width: 100%; }
-    .stButton>button:hover { background-color: #cccccc; color: #000; }
-    /* Estética para el uploader de archivos */
-    [data-testid="stFileUploadDropzone"] { background: #111; border: 1px dashed #333; border-radius: 10px; }
+    /* Fondo general y color de texto */
+    .stApp { background-color: #f7f7f8; color: #212121; }
+    
+    /* Barra lateral blanca con borde sutil */
+    [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e5e5e5; padding-top: 2rem; }
+    
+    /* Burbujas de chat estilo moderno */
+    .stChatMessage { background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 15px; margin-bottom: 10px; color: #212121; }
+    
+    /* Input de texto */
+    .stChatInputContainer { padding-bottom: 20px; background-color: transparent; }
+    .stChatInput { border-radius: 10px !important; border: 1px solid #ddd !important; background-color: #ffffff !important; color: #212121 !important; }
+    
+    /* Títulos y botones */
+    h1 { color: #1a1a1a; font-family: 'Inter', sans-serif; font-weight: 700; }
+    .stButton>button { background-color: #1a1a1a; color: #ffffff; border-radius: 8px; border: none; font-weight: bold; width: 100%; transition: 0.3s; }
+    .stButton>button:hover { background-color: #444444; color: #ffffff; }
+    
+    /* Uploader de PDF */
+    [data-testid="stFileUploadDropzone"] { background: #f0f0f0; border: 1px dashed #ccc; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,12 +53,12 @@ def generar_imagen(prompt):
     except: return None
     return None
 
-# --- BARRA LATERAL (CENTRO DE MANDO) ---
+# --- BARRA LATERAL ---
 with st.sidebar:
-    st.markdown('<h1 style="font-size: 25px;">🌑 Alberto AI PRO</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="font-size: 25px;">⚪ Alberto AI PRO</h1>', unsafe_allow_html=True)
     st.markdown("---")
     
-    st.markdown("### 📄 Análisis de Documentos")
+    st.markdown("### 📄 Documentos")
     archivo_pdf = st.file_uploader("Sube un PDF", type=["pdf"], label_visibility="collapsed")
     
     if archivo_pdf:
@@ -57,21 +68,20 @@ with st.sidebar:
             if "contexto_pdf" not in st.session_state or st.session_state.contexto_pdf != archivo_pdf.name:
                 st.session_state.contexto_pdf = archivo_pdf.name
                 st.session_state.mensajes.append({"role": "system", "content": f"Contenido del PDF: {texto_pdf[:4000]}"})
-        st.success(f"✅ {archivo_pdf.name} analizado")
+        st.success(f"✅ {archivo_pdf.name} cargado")
 
     st.markdown("---")
-    st.markdown("### ⚙️ Ecosistema Gratis")
-    st.caption("🟢 Cerebro: Llama 3.3 70B")
-    st.caption("🎨 Arte: FLUX.1")
-    st.caption("📍 Ubicación: Streamlit Cloud")
+    st.markdown("### ⚙️ Ecosistema")
+    st.caption("🧠 Inteligencia: Llama 3.3")
+    st.caption("🎨 Generador: FLUX.1")
     
-    if st.button("Limpiar Memoria"):
+    if st.button("Limpiar conversación"):
         st.session_state.mensajes = [st.session_state.mensajes[0]]
         st.rerun()
 
 # --- CHAT PRINCIPAL ---
 if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [{"role": "system", "content": "Eres Alberto AI Ultra Black. Eres sofisticado, directo y eficiente. Respondes en español. Si te piden una imagen, genera un prompt en inglés que empiece con [IMAGEN]."}]
+    st.session_state.mensajes = [{"role": "system", "content": "Eres Alberto AI White Edition. Eres profesional, amable y eficiente. Respondes en español. Si te piden una imagen, genera un prompt en inglés que empiece con [IMAGEN]."}]
 
 # Mostrar historial
 for m in st.session_state.mensajes:
@@ -83,7 +93,7 @@ for m in st.session_state.mensajes:
                 st.markdown(m["content"])
 
 # Entrada de usuario
-if prompt := st.chat_input("Escribe una orden o pide una imagen..."):
+if prompt := st.chat_input("Escribe tu duda o pide una imagen..."):
     st.session_state.mensajes.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
@@ -91,12 +101,11 @@ if prompt := st.chat_input("Escribe una orden o pide una imagen..."):
         placeholder = st.empty()
         full_res = ""
         
-        # El motor gratuito más potente del mundo hoy
         stream = cliente_groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[m for m in st.session_state.mensajes if "tipo" not in m],
             stream=True,
-            temperature=0.5
+            temperature=0.4
         )
         
         for chunk in stream:
@@ -105,9 +114,9 @@ if prompt := st.chat_input("Escribe una orden o pide una imagen..."):
                 if not full_res.startswith("[IMAGEN]"):
                     placeholder.markdown(full_res + "▌")
 
-        # Generador de arte
+        # Generador de imágenes
         if full_res.startswith("[IMAGEN]"):
-            placeholder.info("🎨 Generando arte digital de alta resolución...")
+            placeholder.info("🎨 Creando imagen...")
             prompt_img = full_res.replace("[IMAGEN]", "").strip()
             img_b64 = generar_imagen(prompt_img)
             if img_b64:
@@ -115,6 +124,6 @@ if prompt := st.chat_input("Escribe una orden o pide una imagen..."):
                 st.image(base64.b64decode(img_b64), use_container_width=True)
                 st.session_state.mensajes.append({"role": "assistant", "content": img_b64, "tipo": "img"})
             else:
-                placeholder.error("Servidor FLUX saturado. Prueba en 10 seg.")
+                placeholder.error("Error al generar la imagen. Inténtalo de nuevo.")
         else:
             st.session_state.mensajes.append({"role": "assistant", "content": full_res})
