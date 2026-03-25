@@ -3,211 +3,152 @@ import groq
 import fitz
 import requests
 import base64
-import io
-from PIL import Image
+import json
+from supabase import create_client, Client
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Alberto AI - Pro Hub", page_icon="🏢", layout="wide")
+# --- CONFIGURACIÓN DE ÉLITE ---
+st.set_page_config(page_title="Alberto AI - Cloud Edition", page_icon="☁️", layout="wide")
 
-# Estética Premium White (Limpia y Moderna)
+# CSS Estética White Premium
 st.markdown("""
     <style>
-    .stApp { background-color: #f7f7f8; color: #212121; }
+    .stApp { background-color: #f7f7f8; }
     [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e5e5e5; }
-    .stChatMessage { background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; margin-bottom: 10px; }
-    .stExpander { background-color: #ffffff; border: 1px solid #eee; border-radius: 10px; margin-bottom: 10px; }
-    h1 { color: #1a1a1a; font-family: 'Inter', sans-serif; font-weight: 700; }
-    .welcome-box { padding: 3rem; text-align: center; background: white; border-radius: 20px; border: 1px solid #eee; margin-top: 5rem; }
-    /* Estilo para los botones de chat en la sidebar */
-    .stButton>button { border-radius: 8px; font-weight: 500; text-align: left; transition: 0.3s; }
+    .stChatMessage { background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE ESTADOS ---
+# --- CONEXIÓN A BASES DE DATOS ---
+try:
+    # Conexión Supabase
+    supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    # Conexión Groq
+    cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
+    HF_API_KEY = st.secrets["HUGGINGFACE_API_KEY"]
+except Exception as e:
+    st.error("Error de configuración. Revisa tus Secrets.")
+    st.stop()
+
+# --- FUNCIONES DE MEMORIA ETERNA ---
+def db_guardar_chat(usuario, titulo, mensajes):
+    data = {"usuario": usuario, "titulo_chat": titulo, "contenido": mensajes}
+    supabase.table("historial_chats").upsert(data, on_conflict="usuario,titulo_chat").execute()
+
+def db_cargar_titulos(usuario):
+    res = supabase.table("historial_chats").select("titulo_chat").eq("usuario", usuario).order("fecha", desc=True).execute()
+    return [item['titulo_chat'] for item in res.data]
+
+def db_cargar_mensajes(usuario, titulo):
+    res = supabase.table("historial_chats").select("contenido").eq("usuario", usuario).eq("titulo_chat", titulo).execute()
+    return res.data[0]['contenido'] if res.data else []
+
+def db_guardar_imagen(usuario, img_b64):
+    supabase.table("galeria_imagenes").insert({"usuario": usuario, "imagen_b64": img_b64}).execute()
+
+def db_cargar_galeria(usuario):
+    res = supabase.table("galeria_imagenes").select("imagen_b64").eq("usuario", usuario).order("fecha", desc=True).execute()
+    return [item['imagen_b64'] for item in res.data]
+
+def generar_imagen(prompt):
+    URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    r = requests.post(URL, headers=headers, json={"inputs": prompt})
+    return base64.b64encode(r.content).decode() if r.status_code == 200 else None
+
+def generar_titulo(mensaje):
+    res = cliente_groq.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "system", "content": "Resume en 3 palabras máximo el tema de este mensaje para un título."},
+                  {"role": "user", "content": mensaje}],
+        max_tokens=10
+    )
+    return res.choices[0].message.content.strip()
+
+# --- SISTEMA DE ACCESO ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
-# Base de datos local de chats
-if "diccionario_chats" not in st.session_state:
-    st.session_state.diccionario_chats = {"Nueva Conversación": []}
+if not st.session_state.autenticado:
+    with st.sidebar:
+        st.title("🆔 Acceso")
+        nombre = st.text_input("¿Cómo te llamas?")
+        if st.button("Entrar"):
+            if nombre:
+                st.session_state.autenticado = True
+                st.session_state.usuario = nombre.lower().strip()
+                st.rerun()
+    st.markdown("<h1 style='text-align:center;'>Alberto AI Cloud</h1><p style='text-align:center;'>Inicia sesión a la izquierda.</p>", unsafe_allow_html=True)
+    st.stop()
+
+# --- INTERFAZ ACTIVA ---
+with st.sidebar:
+    st.subheader(f"👋 {st.session_state.usuario.capitalize()}")
+    if st.button("➕ Nuevo Chat", use_container_width=True):
+        st.session_state.chat_activo = "Nueva Conversación"
+        st.rerun()
+    
+    st.markdown("---")
+    st.caption("Tus conversaciones guardadas:")
+    titulos_db = db_cargar_titulos(st.session_state.usuario)
+    for t in titulos_db:
+        if st.button(t, key=f"btn_{t}", use_container_width=True, type="primary" if t == st.session_state.get('chat_activo') else "secondary"):
+            st.session_state.chat_activo = t
+            st.rerun()
+    
+    with st.expander("🎨 Galería Eterna"):
+        for img in db_cargar_galeria(st.session_state.usuario):
+            st.image(base64.b64decode(img))
+
+# Cargar mensajes del chat activo
 if "chat_activo" not in st.session_state:
     st.session_state.chat_activo = "Nueva Conversación"
-if "imagenes_galeria" not in st.session_state:
-    st.session_state.imagenes_galeria = []
 
-# --- PANTALLA DE ACCESO ---
-def pantalla_acceso():
-    with st.sidebar:
-        st.title("🆔 Identificación")
-        nombre = st.text_input("Tu nombre...", placeholder="Escribe tu nombre...")
-        if st.button("Comenzar Sesión"):
-            if nombre.strip():
-                st.session_state.autenticado = True
-                st.session_state.usuario_actual = nombre.strip()
-                st.rerun()
-            else:
-                st.warning("Por favor, introduce un nombre.")
+mensajes = db_cargar_mensajes(st.session_state.usuario, st.session_state.chat_activo)
+if not mensajes:
+    mensajes = [{"role": "system", "content": "Eres Alberto AI. Responde en español. Imágenes con [IMAGEN]."}]
 
-if not st.session_state.autenticado:
-    st.markdown("<div class='welcome-box'><h1>Alberto AI Community</h1><p>Por favor, identifícate en el panel lateral para empezar.</p></div>", unsafe_allow_html=True)
-    pantalla_acceso()
-    st.stop()
-
-# --- LLAVES API ---
-try:
-    cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
-    HF_API_KEY = st.secrets["HUGGINGFACE_API_KEY"]
-except KeyError:
-    st.error("Error: Revisa las Keys en los Secrets de Streamlit Cloud.")
-    st.stop()
-
-# --- FUNCIONES MAESTRAS ---
-def generar_imagen(prompt):
-    # ¡URL Verificada! Usamos el nuevo enrutador de Hugging Face
-    URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    try:
-        r = requests.post(URL, headers=headers, json={"inputs": prompt}, timeout=20)
-        if r.status_code == 200:
-            return base64.b64encode(r.content).decode()
-        else:
-            return None # Si el servidor falla, devolvemos None
-    except Exception as e:
-        return None
-
-def generar_titulo_automatico(primer_mensaje):
-    """Llama a la IA para resumir el chat en 3 palabras"""
-    try:
-        response = cliente_groq.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "Crea un título de MÁXIMO 3 PALABRAS para este chat basándote en el mensaje del usuario. No uses comillas ni puntos. Solo el título."},
-                      {"role": "user", "content": primer_mensaje}],
-            max_tokens=10,
-            temperature=0.3
-        )
-        return response.choices[0].message.content.strip()
-    except:
-        return f"Chat {len(st.session_state.diccionario_chats)}"
-
-# --- BARRA LATERAL (HERRAMIENTAS Y CHATS) ---
-with st.sidebar:
-    st.markdown(f"### ✨ Sesión de: **{st.session_state.usuario_actual}**")
-    
-    if st.button("➕ Nuevo Chat", use_container_width=True):
-        nuevo_id = f"Nueva Conversación {str(len(st.session_state.diccionario_chats))}"
-        st.session_state.diccionario_chats[nuevo_id] = []
-        st.session_state.chat_activo = nuevo_id
-        st.rerun()
-
-    st.markdown("---")
-    st.subheader("📜 Tus Chats")
-    
-    # Listado de chats existentes
-    for id_chat in list(st.session_state.diccionario_chats.keys()):
-        tipo_boton = "primary" if id_chat == st.session_state.chat_activo else "secondary"
-        if st.button(id_chat, key=f"btn_{id_chat}", use_container_width=True, type=tipo_boton):
-            st.session_state.chat_activo = id_chat
-            st.rerun()
-
-    st.markdown("---")
-    
-    # Desplegable de Archivos
-    with st.expander("📄 Subir PDF (Para este chat)"):
-        archivo_pdf = st.file_uploader("", type=["pdf"], label_visibility="collapsed")
-        if archivo_pdf:
-            doc = fitz.open(stream=archivo_pdf.read(), filetype="pdf")
-            st.session_state[f"pdf_{st.session_state.chat_activo}"] = "".join([p.get_text() for p in doc])
-            st.success(f"'{archivo_pdf.name}' vinculado.")
-
-    # Desplegable de Galería
-    with st.expander("🎨 Galería"):
-        if not st.session_state.imagenes_galeria:
-            st.caption("Aún no hay imágenes.")
-        else:
-            for img in reversed(st.session_state.imagenes_galeria):
-                st.image(base64.b64decode(img), use_container_width=True)
-                st.markdown("---")
-
-    st.markdown("---")
-    if st.button("Cerrar Sesión", use_container_width=True):
-        st.session_state.autenticado = False
-        st.session_state.diccionario_chats = {"Nueva Conversación": []}
-        st.session_state.chat_activo = "Nueva Conversación"
-        st.session_state.imagenes_galeria = []
-        st.rerun()
-
-# --- CUERPO DEL CHAT ---
 st.title(f"💬 {st.session_state.chat_activo}")
 
-# Recuperamos la conversación del chat activo
-mensajes_actuales = st.session_state.diccionario_chats[st.session_state.chat_activo]
-
-if not mensajes_actuales:
-    # Definimos el prompt de sistema para este chat, indicándole que si le piden una imagen, use [IMAGEN] + prompt inglés.
-    system_prompt = f"Eres 'Alberto AI PRO'. Usuario: {st.session_state.usuario_actual}. Tu misión es ser eficiente y directo. Si te piden una imagen, responde EXCLUSIVAMENTE con la etiqueta [IMAGEN] seguida del prompt en inglés detallado. NO añadas texto de cortesía antes o después. Ejemplo: [IMAGEN] a photo of a futuristic cat. Responde en español para el texto normal."
-    mensajes_actuales.append({"role": "system", "content": system_prompt})
-
-# Mostrar mensajes del chat seleccionado
-for m in mensajes_actuales:
+# Mostrar chat
+for m in mensajes:
     if m["role"] != "system":
         with st.chat_message(m["role"]):
-            if "tipo" in m and m["tipo"] == "img":
-                st.image(base64.b64decode(m["content"]), use_container_width=True)
-            else:
-                st.markdown(m["content"])
+            if m.get("tipo") == "img": st.image(base64.b64decode(m["content"]))
+            else: st.markdown(m["content"])
 
-# --- LÓGICA DE RESPUESTA Y AUTOTITULADO ---
+# Entrada
 if prompt := st.chat_input("Dime algo..."):
-    # 1. Guardamos el mensaje del usuario
-    mensajes_actuales.append({"role": "user", "content": prompt})
+    # 1. Autotitular si es el primer mensaje
+    if st.session_state.chat_activo == "Nueva Conversación":
+        nuevo_t = generar_titulo(prompt)
+        st.session_state.chat_activo = nuevo_t
+    
+    # 2. Guardar usuario y pedir respuesta
+    mensajes.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
-
-    # 2. ¿Es el primer mensaje? Generamos título temático
-    # (Contamos 2 porque el índice 0 es el mensaje de 'system')
-    if len(mensajes_actuales) == 2 and "Nueva Conversación" in st.session_state.chat_activo:
-        nuevo_titulo = generar_titulo_automatico(prompt)
-        # Actualizamos el diccionario con la nueva clave temárica
-        st.session_state.diccionario_chats[nuevo_titulo] = st.session_state.diccionario_chats.pop(st.session_state.chat_activo)
-        st.session_state.chat_activo = nuevo_titulo
-        # ¡IMPORTANTE! Refrescamos para que el título en la sidebar cambie al instante
-        st.rerun()
-
-    # 3. Respuesta de la IA
+    
     with st.chat_message("assistant"):
         placeholder = st.empty()
         full_res = ""
-        
-        # Filtramos para enviar solo texto al cerebro Llama
-        ctx = [m for m in mensajes_actuales if "tipo" not in m]
-        # Añadir contexto PDF si este chat específico tiene uno vinculado
-        pdf_key = f"pdf_{st.session_state.chat_activo}"
-        if pdf_key in st.session_state:
-            ctx.insert(1, {"role": "system", "content": f"Documento de apoyo actual: {st.session_state[pdf_key][:3000]}"})
-
         stream = cliente_groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=ctx,
+            messages=[m for m in mensajes if m.get("tipo") != "img"],
             stream=True
         )
-        
         for chunk in stream:
             if chunk.choices[0].delta.content:
                 full_res += chunk.choices[0].delta.content
-                if not full_res.startswith("[IMAGEN]"):
-                    placeholder.markdown(full_res + "▌")
-
-        # Generador de arte
-        if full_res.startswith("[IMAGEN]"):
-            placeholder.info("🎨 Alberto AI está creando arte digital para ti...")
-            img_b64 = generar_imagen(full_res.replace("[IMAGEN]", "").strip())
+                placeholder.markdown(full_res + "▌")
+        
+        if "[IMAGEN]" in full_res:
+            img_b64 = generar_imagen(full_res.replace("[IMAGEN]", ""))
             if img_b64:
-                placeholder.empty()
-                st.image(base64.b64decode(img_b64), use_container_width=True)
-                # Guardamos la imagen en el chat y en la galería
-                mensajes_actuales.append({"role": "assistant", "content": img_b64, "tipo": "img"})
-                st.session_state.imagenes_galeria.append(img_b64)
-                st.rerun() # Refrescamos para guardar cambios en galería
-            else:
-                placeholder.error("Servidor FLUX saturado. Reintenta en 10 seg.")
+                st.image(base64.b64decode(img_b64))
+                mensajes.append({"role": "assistant", "content": img_b64, "tipo": "img"})
+                db_guardar_imagen(st.session_state.usuario, img_b64)
         else:
-            mensajes_actuales.append({"role": "assistant", "content": full_res})
+            mensajes.append({"role": "assistant", "content": full_res})
+        
+        # 3. GUARDAR TODO EN LA BASE DE DATOS
+        db_guardar_chat(st.session_state.usuario, st.session_state.chat_activo, mensajes)
+        st.rerun()
