@@ -1,103 +1,120 @@
 import streamlit as st
 import groq
-import fitz  # PyMuPDF
+import fitz
 import requests
 import base64
 import io
 from PIL import Image
 
-# 1. Configuración de página (Estética SaaS Minimalista)
-st.set_page_config(page_title="Alberto AI - Black Edition", page_icon="⬛", layout="centered", initial_sidebar_state="collapsed")
+# --- CONFIGURACIÓN DE ÉLITE ---
+st.set_page_config(page_title="Alberto AI - Ultra Black", page_icon="🌑", layout="wide")
 
-# 2. Inyección de CSS
-st.markdown("""<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;} .block-container { padding-top: 2rem; padding-bottom: 2rem; } [data-testid="stFileUploadDropzone"] { padding: 1rem; border-radius: 5px; }</style>""", unsafe_allow_html=True)
+# CSS para una interfaz tipo "Premium Dark Mode"
+st.markdown("""
+    <style>
+    .stApp { background-color: #050505; color: #e0e0e0; }
+    [data-testid="stSidebar"] { background-color: #0a0a0a; border-right: 1px solid #1e1e1e; padding-top: 2rem; }
+    .stChatMessage { background-color: #111111; border: 1px solid #222; border-radius: 12px; padding: 15px; margin-bottom: 10px; }
+    .stChatInputContainer { padding-bottom: 20px; }
+    h1 { color: #ffffff; font-family: 'Inter', sans-serif; font-weight: 800; }
+    .stButton>button { background-color: #ffffff; color: #000; border-radius: 8px; border: none; font-weight: bold; width: 100%; }
+    .stButton>button:hover { background-color: #cccccc; color: #000; }
+    /* Estética para el uploader de archivos */
+    [data-testid="stFileUploadDropzone"] { background: #111; border: 1px dashed #333; border-radius: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-st.title("⬛ Alberto AI")
-
-# 3. Inicializar APIs
+# --- LÓGICA DE APIS ---
 try:
     cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
     HF_API_KEY = st.secrets["HUGGINGFACE_API_KEY"]
-except KeyError:
-    st.error("Error: Faltan claves en secrets.toml.")
-    st.stop()
-except FileNotFoundError:
-    st.error("Error: No se encuentra el archivo secrets.toml.")
+except:
+    st.error("⚠️ Configura tus Keys en los Secrets de Streamlit Cloud.")
     st.stop()
 
-# Función interna para generar la imagen con el NUEVO ENRUTADOR de Hugging Face
-def generar_imagen(prompt_imagen):
-    # ¡Actualizado al nuevo servidor de Hugging Face!
-    API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+def generar_imagen(prompt):
+    URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
     try:
-        response = requests.post(API_URL, headers=headers, json={"inputs": prompt_imagen})
-        if response.status_code == 200:
-            imagen = Image.open(io.BytesIO(response.content))
-            buffered = io.BytesIO()
-            imagen.save(buffered, format="PNG")
-            return base64.b64encode(buffered.getvalue()).decode(), None
-        else:
-            return None, f"Código {response.status_code}: {response.text}"
-    except Exception as e:
-        return None, str(e)
+        r = requests.post(URL, headers=headers, json={"inputs": prompt}, timeout=20)
+        if r.status_code == 200:
+            return base64.b64encode(r.content).decode()
+    except: return None
+    return None
 
-# 4. Memoria del Chat y Personalidad
-if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [
-        {"role": "system", "content": "Eres 'Alberto AI - Black Edition', un asistente de IA de élite. Respondes SIEMPRE en español de España de forma directa. IMPORTANTE: Si el usuario te pide generar, crear o dibujar una imagen, tu respuesta DEBE empezar obligatoriamente con la etiqueta [IMAGEN] seguida del prompt en inglés detallado para enviárselo al generador de imágenes. Ejemplo: [IMAGEN] A cyberpunk city at night with neon lights, photorealistic. No añadas más texto después del prompt."}
-    ]
-
-# 5. Motor de Ingesta de PDF
-with st.expander("📄 Añadir documento PDF", expanded=False):
-    archivo_pdf = st.file_uploader("", type=["pdf"], label_visibility="collapsed")
-    if archivo_pdf is not None:
-        if "pdf_actual" not in st.session_state or st.session_state.pdf_actual != archivo_pdf.name:
+# --- BARRA LATERAL (CENTRO DE MANDO) ---
+with st.sidebar:
+    st.markdown('<h1 style="font-size: 25px;">🌑 Alberto AI PRO</h1>', unsafe_allow_html=True)
+    st.markdown("---")
+    
+    st.markdown("### 📄 Análisis de Documentos")
+    archivo_pdf = st.file_uploader("Sube un PDF", type=["pdf"], label_visibility="collapsed")
+    
+    if archivo_pdf:
+        with st.spinner("Analizando..."):
             doc = fitz.open(stream=archivo_pdf.read(), filetype="pdf")
-            texto_extraido = "".join([pagina.get_text() for pagina in doc])
-            st.session_state.mensajes.append({"role": "system", "content": f"El usuario ha subido el documento '{archivo_pdf.name}'. Contenido: {texto_extraido}"})
-            st.session_state.pdf_actual = archivo_pdf.name
-            st.success("Documento memorizado.")
+            texto_pdf = "".join([p.get_text() for p in doc])
+            if "contexto_pdf" not in st.session_state or st.session_state.contexto_pdf != archivo_pdf.name:
+                st.session_state.contexto_pdf = archivo_pdf.name
+                st.session_state.mensajes.append({"role": "system", "content": f"Contenido del PDF: {texto_pdf[:4000]}"})
+        st.success(f"✅ {archivo_pdf.name} analizado")
 
-# 6. Mostrar historial de mensajes
-for mensaje in st.session_state.mensajes:
-    if mensaje["role"] == "user":
-        with st.chat_message("user"): st.markdown(mensaje["content"])
-    elif mensaje["role"] == "assistant":
-        with st.chat_message("assistant"):
-            if "[IMAGEN]" in mensaje.get("tipo", ""):
-                st.image(base64.b64decode(mensaje["content"]))
+    st.markdown("---")
+    st.markdown("### ⚙️ Ecosistema Gratis")
+    st.caption("🟢 Cerebro: Llama 3.3 70B")
+    st.caption("🎨 Arte: FLUX.1")
+    st.caption("📍 Ubicación: Streamlit Cloud")
+    
+    if st.button("Limpiar Memoria"):
+        st.session_state.mensajes = [st.session_state.mensajes[0]]
+        st.rerun()
+
+# --- CHAT PRINCIPAL ---
+if "mensajes" not in st.session_state:
+    st.session_state.mensajes = [{"role": "system", "content": "Eres Alberto AI Ultra Black. Eres sofisticado, directo y eficiente. Respondes en español. Si te piden una imagen, genera un prompt en inglés que empiece con [IMAGEN]."}]
+
+# Mostrar historial
+for m in st.session_state.mensajes:
+    if m["role"] != "system":
+        with st.chat_message(m["role"]):
+            if "tipo" in m and m["tipo"] == "img":
+                st.image(base64.b64decode(m["content"]), use_container_width=True)
             else:
-                st.markdown(mensaje["content"])
+                st.markdown(m["content"])
 
-# 7. Input del usuario y Respuesta
-if prompt := st.chat_input("Escribe tu orden o pide una imagen..."):
+# Entrada de usuario
+if prompt := st.chat_input("Escribe una orden o pide una imagen..."):
     st.session_state.mensajes.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        respuesta_completa = ""
-        stream = cliente_groq.chat.completions.create(model="llama-3.3-70b-versatile", messages=[m for m in st.session_state.mensajes if "tipo" not in m], stream=True, temperature=0.3)
+        full_res = ""
+        
+        # El motor gratuito más potente del mundo hoy
+        stream = cliente_groq.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[m for m in st.session_state.mensajes if "tipo" not in m],
+            stream=True,
+            temperature=0.5
+        )
+        
         for chunk in stream:
             if chunk.choices[0].delta.content:
-                respuesta_completa += chunk.choices[0].delta.content
-                if not respuesta_completa.startswith("[IMAGEN]"):
-                    placeholder.markdown(respuesta_completa + "▌")
-        
-        if respuesta_completa.startswith("[IMAGEN]"):
-            placeholder.markdown("🎨 Conectando con el servidor FLUX...")
-            prompt_traducido = respuesta_completa.replace("[IMAGEN]", "").strip()
-            
-            imagen_b64, error_msg = generar_imagen(prompt_traducido)
-            
-            if imagen_b64:
+                full_res += chunk.choices[0].delta.content
+                if not full_res.startswith("[IMAGEN]"):
+                    placeholder.markdown(full_res + "▌")
+
+        # Generador de arte
+        if full_res.startswith("[IMAGEN]"):
+            placeholder.info("🎨 Generando arte digital de alta resolución...")
+            prompt_img = full_res.replace("[IMAGEN]", "").strip()
+            img_b64 = generar_imagen(prompt_img)
+            if img_b64:
                 placeholder.empty()
-                st.image(base64.b64decode(imagen_b64))
-                st.session_state.mensajes.append({"role": "assistant", "content": imagen_b64, "tipo": "[IMAGEN]"})
+                st.image(base64.b64decode(img_b64), use_container_width=True)
+                st.session_state.mensajes.append({"role": "assistant", "content": img_b64, "tipo": "img"})
             else:
-                placeholder.error(f"Fallo en motor de imagen. Detalle técnico: {error_msg}")
-                st.session_state.mensajes.append({"role": "assistant", "content": f"No he podido generar la imagen. Error: {error_msg}"})
+                placeholder.error("Servidor FLUX saturado. Prueba en 10 seg.")
         else:
-            placeholder.markdown(respuesta_completa)
-            st.session_state.mensajes.append({"role": "assistant", "content": respuesta_completa})
+            st.session_state.mensajes.append({"role": "assistant", "content": full_res})
